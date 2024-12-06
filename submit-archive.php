@@ -70,6 +70,24 @@ if(isset($_GET['id']) && $_GET['id'] > 0){
                             </div>
                         </div>
                         <div class="col-lg-12">
+                            <!--  Video Teaser Upload                                                                                                                                                          --->
+                        <div class="form-group">
+                            <label for="video" class="control-label text-muted">Project Video Teaser (MP4 Only)</label>
+                            <input type="file" id="video" name="video" class="form-control form-control-border" accept="video/mp4" <?= !isset($id) ? "required" : "" ?>>
+                        </div>
+                        <div class="form-group text-center">
+                            <?php if (isset($video_path) && !empty($video_path)): ?>
+                                <video controls width="100%" class="mt-2">
+                                    <source src="<?= validate_video($video_path) ?>" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            <?php else: ?>
+                                <p class="text-muted">No video uploaded yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                        <div class="col-lg-12">
                             <div class="form-group">
                                 <label for="pdf" class="control-label text-muted">Project Document (PDF Only)</label>
                                 <input type="file" id="pdf" name="pdf" class="form-control form-control-border" accept="application/pdf" <?= !isset($id) ? "required" : "" ?>>

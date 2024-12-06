@@ -26,6 +26,8 @@ class Master extends DBConnection {
     }
 
     function save_archive() {
+        error_log("save_archive function called");
+    
         if (empty($_POST['id'])) {
             $pref = date("Ym");
             $code = sprintf("%'.04d", 1);
@@ -41,55 +43,62 @@ class Master extends DBConnection {
             $_POST['student_id'] = $this->settings->userdata('id');
             $_POST['curriculum_id'] = $this->settings->userdata('curriculum_id');
         }
-
+    
         if (isset($_POST['abstract'])) {
             $_POST['abstract'] = htmlentities($_POST['abstract'], ENT_QUOTES | ENT_HTML5);
         }
         if (isset($_POST['members'])) {
             $_POST['members'] = htmlentities($_POST['members'], ENT_QUOTES | ENT_HTML5);
         }
-
+    
         extract($_POST);
         $data = "";
-
+    
         foreach ($_POST as $k => $v) {
             if (!in_array($k, ['id']) && !is_array($_POST[$k])) {
                 $v = $this->conn->real_escape_string($v);
                 $data .= (empty($data) ? "" : ",") . " `{$k}`='{$v}' ";
             }
         }
-
+    
         $sql = empty($id) ? "INSERT INTO `archive_list` SET {$data}" : "UPDATE `archive_list` SET {$data} WHERE id = '{$id}'";
+        error_log("Executing SQL: $sql");
         $save = $this->conn->query($sql);
-
+    
         if ($save) {
+            error_log("SQL executed successfully");
             $aid = !empty($id) ? $id : $this->conn->insert_id;
             $resp = [
                 'status' => 'success',
                 'id' => $aid,
                 'msg' => empty($id) ? "Archive was successfully submitted" : "Archive details were updated successfully."
             ];
-
-            // Handle image upload
+    
             if (isset($_FILES['img']) && $_FILES['img']['tmp_name'] != '') {
                 $this->handle_image_upload($aid, $_FILES['img']);
             }
-
-            // Handle PDF upload
+    
             if (isset($_FILES['pdf']) && $_FILES['pdf']['tmp_name'] != '') {
                 $this->handle_pdf_upload($aid, $_FILES['pdf']);
             }
-
+    
+            if (isset($_FILES['video']) && $_FILES['video']['tmp_name'] != '') {
+                $this->handle_video_upload($aid, $_FILES['video']);
+            }
         } else {
+            error_log("SQL Error: " . $this->conn->error);
             $resp = [
                 'status' => 'failed',
                 'msg' => 'An error occurred.',
                 'error' => $this->conn->error
             ];
         }
-
-        return json_encode($resp);
+    
+        error_log("Returning response: " . json_encode($resp));
+        echo json_encode($resp);
+        exit;
     }
+    
 
     private function handle_image_upload($aid, $file) {
         $fname = 'uploads/banners/archive-' . $aid . '.png';
@@ -132,90 +141,28 @@ class Master extends DBConnection {
         }
     }
 
-    function update_status() {
-        extract($_POST);
-        if (!isset($id) || !isset($status)) {
-            return json_encode([
-                'status' => 'failed',
-                'msg' => 'Invalid parameters provided.'
-            ]);
+    private function handle_video_upload($aid, $file) {
+        $fname = 'uploads/videos/archive-' . $aid . '.mp4';
+        $dir_path = base_app . $fname;
+        $upload = $file['tmp_name'];
+        $type = mime_content_type($upload);
+        $allowed = ['video/mp4'];
+
+        if (!in_array($type, $allowed)) {
+            $resp['msg'] = "Invalid video format. Only MP4 files are allowed.";
+            $resp['status'] = 'failed';
+            echo json_encode($resp);
+            exit;
         }
 
-        $update = $this->conn->query("UPDATE `archive_list` SET status = '{$status}' WHERE id = '{$id}'");
-
-        if ($update) {
-            $resp = [
-                'status' => 'success',
-                'msg' => 'Archive status has been successfully updated.'
-            ];
+        // Move the video file to the uploads directory
+        if (move_uploaded_file($upload, $dir_path)) {
+            $this->conn->query("UPDATE archive_list SET `video_path` = CONCAT('{$fname}', '?v=', unix_timestamp(CURRENT_TIMESTAMP)) WHERE id = '{$aid}'");
         } else {
-            $resp = [
-                'status' => 'failed',
-                'msg' => 'An error occurred.',
-                'error' => $this->conn->error
-            ];
+            $resp['msg'] = "Failed to upload the video.";
+            $resp['status'] = 'failed';
+            echo json_encode($resp);
+            exit;
         }
-
-        return json_encode($resp);
     }
-    
-    function delete_archive() {
-        extract($_POST);
-        if (!isset($id)) {
-            return json_encode([
-                'status' => 'failed',
-                'msg' => 'Invalid parameters provided.'
-            ]);
-        }
-
-        // Delete associated files (image and PDF) if they exist
-        $query = $this->conn->query("SELECT banner_path, document_path FROM archive_list WHERE id = '{$id}'");
-        if ($query && $query->num_rows > 0) {
-            $row = $query->fetch_assoc();
-            if (isset($row['banner_path']) && is_file(base_app . $row['banner_path'])) {
-                unlink(base_app . $row['banner_path']);
-            }
-            if (isset($row['document_path']) && is_file(base_app . $row['document_path'])) {
-                unlink(base_app . $row['document_path']);
-            }
-        }
-
-        // Delete the archive entry from the database
-        $delete = $this->conn->query("DELETE FROM `archive_list` WHERE id = '{$id}'");
-
-        if ($delete) {
-            $this->settings->set_flashdata('success', 'Archive entry has been successfully deleted.');
-            $resp = [
-                'status' => 'success',
-                'msg' => 'Archive entry has been successfully deleted.'
-            ];
-        } else {
-            $resp = [
-                'status' => 'failed',
-                'msg' => 'An error occurred during deletion.',
-                'error' => $this->conn->error
-            ];
-        }
-
-        return json_encode($resp);
-    }
-}
-
-$Master = new Master();
-$action = !isset($_GET['f']) ? 'none' : strtolower($_GET['f']);
-$sysset = new SystemSettings();
-
-switch ($action) {
-    case 'save_archive':
-        echo $Master->save_archive();
-        break;
-    case 'update_status':
-        echo $Master->update_status();
-        break;
-    case 'delete_archive':
-        echo $Master->delete_archive();
-        break;
-    default:
-        echo json_encode(['status' => 'failed', 'msg' => 'Invalid action.']);
-        break;
 }
